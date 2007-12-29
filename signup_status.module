@@ -1,0 +1,717 @@
+<?php
+// $Id$
+
+/**
+ * @todo Programmatically alter the signup limit to add in the wait list count 
+ * - undo and redo this every time a node is loaded/displayed or saved, respectively
+ */
+
+
+/**
+ * Implementation of hook_perm
+ */
+function signup_status_perm() {
+  return array(
+    'manage signup status codes',
+  );
+}
+
+
+/**
+ * Implementation of hook_menu
+ */
+function signup_status_menu($may_cache) {
+  $items = array();
+  $access_all = user_access('administer all signups');
+  $manage_codes = user_access('administer site configuration');
+
+  if ($may_cache) {
+    $items[] = array(
+      'path' => 'admin/settings/signup_status',
+      'title' => t('Signup status'),
+      'callback' => 'drupal_get_form',
+      'callback arguments' => array('signup_status_admin_form'),
+      'access' => $manage_codes,
+    );
+    $items[] = array(
+      'path' => 'admin/settings/signup_status/codes',
+      'title' => t('Status codes'),
+      'type' => MENU_DEFAULT_LOCAL_TASK,
+      'weight' => -10
+    );
+    $items[] = array(
+      'path' => 'admin/settings/signup_status/add',
+      'title' => t('Add status code'),
+      'callback' => 'drupal_get_form',
+      'callback arguments' => array('signup_status_admin_form', 'add'),
+      'access' => $manage_codes,
+      'type' => MENU_LOCAL_TASK,
+    );
+  }
+  else {
+    // If it's a signup-enabled node, then put in a signup-status tab for admins.
+    if (arg(0) == 'node' && is_numeric(arg(1)) && db_num_rows(db_query("SELECT nid FROM {signup} WHERE nid = %d", arg(1)))) {
+      $node = node_load(array('nid' => arg(1)));
+      $access_own = user_access('administer signups for own content') && ($user->uid == $node->uid);
+      $items[] = array(
+        'path' => 'node/'. arg(1) .'/signup-status',
+        'title' => t('Signup status'),
+        'callback' => 'drupal_get_form',
+        'callback arguments' => array('signup_status_node_admin_form', $node),
+        'access' => $access_all || $access_own,
+        'type' => MENU_LOCAL_TASK,
+        'weight' => 20,
+      );
+      $items[] = array(
+        'path' => 'node/'. arg(1) .'/signup-status/general',
+        'title' => t('Update users'),
+        'type' => MENU_DEFAULT_LOCAL_TASK,
+        'weight' => -10
+      );
+      $items[] = array(
+        'path' => 'node/'. arg(1) .'/signup-status/print',
+        'title' => t('Print roster'),
+        'callback' => 'signup_status_print_roster',
+        'callback arguments' => array($node),
+        'access' => $access_all || $access_own,
+        'type' => MENU_LOCAL_TASK,
+      );
+      $items[] = array(
+        'path' => 'node/'. arg(1) .'/signup-status/add',
+        'title' => t('Add user'),
+        'callback' => 'drupal_get_form',
+        'callback arguments' => array('signup_status_add_user_form', $node),
+        'access' => $access_all || $access_own,
+        'type' => MENU_LOCAL_TASK,
+      );
+    }
+  }
+  
+  return $items;
+}
+
+
+/**
+ * Menu callback.  Provides the signup status code administration page.
+ * 
+ * @param $arg1
+ *   An optional parameter defining the action to take.
+ * @param @arg2
+ *   An optional parameter defining the status code to edit or delete.
+ */
+function signup_status_admin_form($arg1 = NULL, $arg2 = NULL) {
+  switch ($arg1) {
+    case 'add':
+      $form = signup_status_admin_form_edit();
+      $form['#submit']['signup_status_admin_form_edit_submit'] = array(TRUE);
+      unset($form['delete']);
+      return $form;
+      break;
+    
+    case 'edit':
+      return signup_status_admin_form_edit($arg2);
+    
+    case 'delete':
+      return signup_status_admin_confirm_delete($arg2);
+    
+    default:
+      return signup_status_admin_form_general();
+  }
+}
+
+
+/**
+ * Provide the form for managing status codes
+ */
+function signup_status_admin_form_general() {
+  $form = array();
+  $codes = signup_status_codes();
+  
+  $header = array(
+    t('Name'),
+    t('Description'),
+    t('Modifies signup count'),
+    t('Operations'),
+  );
+  $rows = array();
+  foreach ($codes as $cid => $code) {
+    $rows[] = array(
+      $code['name'],
+      $code['description'],
+      $code['mod_signup_count'],
+      l(t('Edit'), 'admin/settings/signup_status/edit/' . $cid),
+    );
+  }
+  $form['codes'] = array(
+    '#type' => 'markup',
+    '#value' => theme('table', $header, $rows),
+  );
+  return $form;
+}
+
+
+/**
+ * Provide the edit form for editing or adding a signup status code
+ */
+function signup_status_admin_form_edit($cid = NULL) {
+  $codes = signup_status_codes();
+  $form = array();
+  $form['#submit']['signup_status_admin_form_edit_submit'] = array();
+  $form['cid'] = array(
+    '#type' => 'hidden',
+    '#value' => $cid,
+  );
+  $form['name'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Name'),
+    '#default_value' => $cid ? $codes[$cid]['name'] : NULL,
+    '#max_length' => 128,
+    '#required' => TRUE,
+  );
+  $form['description'] = array(
+    '#type' => 'textarea',
+    '#title' => t('Description'),
+    '#default_value' => $cid ? $codes[$cid]['description'] : NULL,
+  );
+  $form['mod_signup_count'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Modify the total signup count'),
+    '#default_value' => $cid ? $codes[$cid]['mod_signup_count'] : NULL,
+  );
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Submit'),
+  );
+  $form['delete'] = array(
+    '#type' => 'submit',
+    '#value' => t('Delete'),
+  );
+  
+  // don't allow mod_signup_count to be changed on cid 0, 1
+  if ($cid == 1 || $cid == 2) {
+    $form['mod_signup_count']['#disabled'] = TRUE;
+  }
+  return $form;
+}
+
+
+/**
+ * Handle submission of the signup status code add / edit form
+ */
+function signup_status_admin_form_edit_submit($form_id, $form_values, $new = FALSE) {
+  if ($_POST['op'] == t('Delete')){
+    drupal_goto('admin/settings/signup_status/delete/' . $form_values['cid']);
+  }
+  else {
+    if ($new) {
+      $result = db_query("INSERT INTO {signup_status_codes} (name, description, mod_signup_count) VALUES ('%s', '%s', %d)", $form_values['name'], $form_values['description'], $form_values['mod_signup_count']);
+      if ($result) {
+        drupal_set_message(t('Added the signup status code.'));
+        drupal_goto('admin/settings/signup_status');
+      }
+    }
+    else {
+      $result = db_query("UPDATE {signup_status_codes} SET name = '%s', description = '%s' mod_signup_count = %d WHERE cid = %d", $form_values['name'], $form_values['description'], $form_values['mod_signup_count'], $form_values['cid']);
+      if ($result) {
+        drupal_set_message(t('Updated the signup status code.'));
+        drupal_goto('admin/settings/signup_status');
+      }
+    }
+  }
+}
+
+
+/**
+ * Provide confirmation of request to delete a status code
+ */
+function signup_status_admin_confirm_delete($cid) {
+  if ($cid == 1 || $cid == 2) {
+    drupal_set_message(t('The two primary states, %approved and %wait_listed, cannot be deleted.', array('%approved' => t('Approved'), '%wait_listed' => t('Wait Listed'))), 'error');
+    drupal_goto('admin/settings/signup_status');
+  }
+  else {
+    $codes = signup_status_codes();
+
+    $form['#submit']['signup_status_admin_confirm_delete_submit'] = array();
+    $form['cid'] = array('#type' => 'value', '#value' => $cid);
+    $form['name'] = array('#type' => 'value', '#value' => $codes[$cid]['name']);
+    return confirm_form($form,
+                    t('Are you sure you want to delete the status code %title?',
+                    array('%title' => $codes[$cid]['name'])),
+                    'admin/settings/signup_status',
+                    t('This action cannot be undone.'),
+                    t('Delete'),
+                    t('Cancel'));
+  }
+}
+
+
+/**
+ * Handle submission of the confirmation form to delete a status code
+ */
+function signup_status_admin_confirm_delete_submit($form_id, $form_values) {
+  db_query("DELETE FROM {signup_status_codes} WHERE cid = %d", $form_values['cid']);
+  drupal_set_message(t('Deleted code %name.', array('%name' => $form_values['name'])));
+  watchdog('signup_status', t('Deleted code %name.', array('%name' => $form_values['name'])), WATCHDOG_NOTICE);
+  return 'admin/settings/signup_status';
+}
+
+
+/**
+ * Provide the signup status node admin form
+ *
+ * @param $node
+ *   The full node object to display the form for.
+ * @return
+ *   A form array.
+ */ 
+function signup_status_node_admin_form($node) {
+  drupal_set_title(check_plain($node->title));
+  $form = array();
+  $codes = signup_status_codes();
+  $signups = signup_status_get_signups($node);
+  
+  $form['options'] = array('#type' => 'fieldset',
+    '#title' => t('Update options'),
+    '#prefix' => '<div class="container-inline">',
+    '#suffix' => '</div>',
+  );
+  $options = array();
+  foreach (module_invoke_all('signup_status_operations') as $operation => $array) {
+    $options[$operation] = $array['label'];
+  }
+  $form['options']['operation'] = array('#type' => 'select', '#options' => $options,  '#default_value' => 'approve');
+  $form['options']['submit'] = array('#type' => 'submit', '#value' => t('Update'));
+  
+  foreach ($signups as $signup) {
+    $key = $signup->anon_mail ? $signup->uid . ':' . $signup->anon_mail : $signup->uid;
+    $data = unserialize($signup->form_data);
+    $username = $signup->uid ? theme('username', $signup) : t('!name (%mail)', array('!name' => $data['Name'], '%mail' => $signup->anon_mail));
+    $users[$key] = '';
+    $form['username'][$key] = array('#value' => $username);
+    $form['signup_time'][$key] = array('#value' => format_date($signup->signup_time));
+    $form['signup_status'][$key] =  array('#value' =>  $codes[$signup->status]['name']);
+    $form['signup_anon_mail'][$key] =  array('#type' => 'hidden', '#value' =>  $signup->anon_mail);
+  }
+  $form['users'] = array('#type' => 'checkboxes', '#options' => $users);
+  $form['nid'] = array('#type' => 'hidden', '#value' => $node->nid);
+  $form['#node'] = $node;
+  
+  return $form;
+}
+
+
+/**
+ * Theme the signup status node admin form
+ */
+function theme_signup_status_node_admin_form($form) {
+  $output = '';
+  $header = array(
+    theme('table_select_header_cell'),
+    t('Name'),
+    t('Signup time'),
+    t('Status'),
+  );
+  $output .= drupal_render($form['options']);
+  
+  if (isset($form['username']) && is_array($form['username'])) {
+    foreach (element_children($form['username']) as $key) {
+      $row = array();
+      $row[] = drupal_render($form['users'][$key]);
+      $row[] = drupal_render($form['username'][$key]);
+      $row[] = drupal_render($form['signup_time'][$key]);
+      $row[] = drupal_render($form['signup_status'][$key]);
+      $rows[] = $row;
+    }
+
+  }
+  else  {
+    $rows[] = array(array('data' => t('No signups available.'), 'colspan' => '6'));
+  }
+  
+  $output .= theme('table', $header, $rows);
+  $output .= drupal_render($form);
+  
+  $links = signup_status_link('node', $form['#node']);
+  $output .= theme('links', $links);
+  
+  
+  return $output;
+}
+
+
+/**
+ * Handle submission of the signup status node admin form
+ */
+function signup_status_node_admin_form_submit($form_id, $form_values) {
+  $operations = module_invoke_all('signup_status_operations');
+  $operation = $operations[$form_values['operation']];
+  // Filter out unchecked users
+  $users = array_filter($form_values['users']);
+  if ($function = $operation['callback']) {
+    // Add in callback arguments if present.
+    if (isset($operation['callback arguments'])) {
+      $args = array_merge(array($users), array($form_values['nid']), $operation['callback arguments']);
+    }
+    else {
+      $args = array($users);
+    }
+    call_user_func_array($function, $args);
+    drupal_set_message(t('The update has been performed.'));
+  }
+}
+
+
+/**
+ * Handle validation of the signup status node admin form
+ */
+function signup_status_node_admin_form_validate($form_id, $form_values) {
+  $users = array_filter($form_values['users']);
+  if (count($users) == 0) {
+    form_set_error('', t('No items selected.'));
+  }
+}
+
+
+/**
+ * Implementation of hook_signup_status_operations
+ */
+function signup_status_signup_status_operations() {
+  $codes = signup_status_codes();
+  foreach ($codes as $cid => $code) {
+    $operations['code_' . $cid] = array(
+      'label' => t('Status') . ': ' . $code['name'],
+      'callback' => 'signup_status_operations',
+      'callback arguments' => array('code', $cid),
+    );
+  }
+  $operations['cancel'] = array(
+    'label' => t('Cancel Signup'),
+    'callback' => 'signup_status_operations',
+    'callback arguments' => array('cancel'),
+  );
+  return $operations;
+}
+
+
+/**
+ * Act upon changes submitted via the signup status admin form for nodes.  Invokes hook_update_signup_status.
+ * 
+ * @param $users
+ *   An array of user uids.  The uid may be of the format "0:user@example.com", in which case it is an anonymous signup.
+ * @param $nid
+ *   The nid of the node for which signup status is being altered.
+ * @param $op
+ *   The operation being invoked.
+ * @param $cid
+ *   The status code id that was selected
+ */
+function signup_status_operations($users, $nid, $op, $cid = NULL) {
+  $accounts = array();
+  
+  // parse through users to prepare anonymous signups
+  foreach ($users as $uid) {
+    $anon_mail = NULL;
+    if (strstr($uid, ':')) {
+      $data = explode(':', $uid);
+      $uid = $data[0];
+      $anon_mail = $data[1];
+    }
+    $accounts[] = array(
+      'uid' => $uid,
+      'anon_mail' => $anon_mail,
+    );
+  }
+  
+  // Cancel the user's signup
+  if ($op == 'cancel') {
+    foreach ($accounts as $account) {
+      signup_cancel_signup($account['uid'], $nid, $account['anon_mail']);
+    }
+  }
+  
+  // Update the user's signup status code
+  if ($op == 'code') {
+    foreach($accounts as $account) {
+      $curr_cid = signup_status_user_signup_status($account['uid'], $nid, $account['anon_mail']);
+      module_invoke_all('update_signup_status', $account['uid'], $nid, $curr_cid, $cid, $account['anon_mail']);
+    }
+    drupal_set_message(t('Updated signup status for selected users.'));
+  }
+}
+
+
+/**
+ * Implementation of hook_form_alter
+ */
+function signup_status_form_alter($form_id, &$form) {
+  switch ($form_id) {
+    case $form['type']['#value'] .'_node_form':
+      signup_status_alter_node_form($form_id, $form);
+      break; 
+    
+    case 'signup_admin_node_form':
+      signup_status_alter_signup_admin_node_form($form_id, $form);
+      break;
+  }
+}
+
+
+/**
+ * Alter the node add / edit form
+ */
+function signup_status_alter_node_form($form_id, &$form) {
+  $form['signup']['node_settings']['settings']['signup_status_close_waitlist_limit'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Wait list limit'),
+    '#default_value' => isset($node->signup_status_close_waitlist_limit) ? $node->signup_status_close_waitlist_limit : 0,
+    '#size' => 4, '#maxlength' => 8,
+    '#description' => t('Maximum number of users who can signup for the wait list.'),
+  );
+}
+
+
+function signup_status_alter_signup_admin_node_form($form_id, &$form) {
+  $form['add_users'] = array(
+    '#type' => 'markup',
+    '#value' => l(t('Add users'), 'node/'. $form['nid']['#value'] . '/signup-status/add'),
+  );
+}
+
+
+function signup_status_add_user_form($node) {
+  drupal_set_title(t('Signup a user to %title', array('%title' => check_plain($node->title))));
+  $form = array();
+  
+  $form['signup_username'] = array(
+    '#type' => 'textfield',
+    '#title' => t('User ID'),
+    '#maxlength' => 60,
+    '#autocomplete_path' => 'user/autocomplete',
+    '#weight' => -1,
+    '#description' => t('Find a local user\'s username'),
+  );
+  $form['signup_anon_mail'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Email'),
+    '#description' => t('An e-mail address is only required for users who are not registered at this site. This value will be discarded if a user ID is provided.'),
+    '#size' => 40,
+    '#maxlength' => 255,
+  );
+  $form['signup_form_data']['#tree'] = TRUE;
+  $form['signup_form_data']['Name'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Name'),
+    '#size' => 40, '#maxlength' => 64,
+    '#description' => t('A name is required for users who are not registered at this site.'),
+  );
+  $form['signup_form_data']['Phone'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Phone'),
+    '#size' => 40, '#maxlength' => 64,
+  );
+  $form['#node'] = $node;
+  $form['nid'] = array('#type' => 'hidden', '#value' => $node->nid);
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Submit'),
+  );
+  return $form;
+}
+
+
+function signup_status_add_user_form_validate($form_id, $form_values) {
+  if (!$form_values['signup_username'] && !$form_values['signup_form_data']['Name']) {
+    form_set_error('signup_form_data][Name', t('Either no user ID is supplied, a name must be provided.'));
+  }
+  if (!$form_values['signup_username'] && !$form_values['signup_anon_mail']) {
+    form_set_error('signup_anon_mail', t('If no user ID is supplied, an email address must be provided.'));
+  }
+  if (!$form_values['signup_username'] && $form_values['signup_anon_mail']) {
+    signup_validate_anon_email($form_values['#node']->nid, $form_values['signup_anon_mail'], 'signup_anon_mail');
+  }
+}
+
+
+function signup_status_add_user_form_submit($form_id, $form_values) {
+  $account = user_load(array('name' => $form_values['signup_username']));
+  $form_values['uid'] = $account->uid;
+  signup_sign_up_user($form_values);
+}
+
+
+
+/**
+ * Implementation of hook_nodeapi
+ */
+function signup_status_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
+}
+
+
+/**
+ * Implementation of hook_link
+ *
+ * Provides a "Print roster" link on signup-enabled nodes
+ */
+function signup_status_link($type, $node = NULL, $teaser = NULL) {
+  $links = array(); 
+  
+  if ($type == 'node' && $node->signup) {
+    global $user;
+    if (user_access('view all signups') || user_access('administer all signups') || (user_access('administer signups for own content') && $user->uid == $node->uid)) {
+      $links['signup_status_print_roster'] = array(
+        'title' => t('Print roster'),
+        'href' => "node/$node->nid/signup-status/print",
+        'attributes' => array('title' => t('Show a printer-friendly version of the roster for this !type', array('!type' => $node->type))),
+      );
+    }
+  }
+  
+  return $links;
+}
+
+
+/**
+ * Output a printable roster of signups for the given node
+ *
+ * @param $node
+ *   The node to display a roster for.
+ * @return 
+ *   None.  Outputs a printable page containing the themed HTML of the roster.
+ */
+function signup_status_print_roster($node) {
+  $content = signup_status_prepare_roster($node);
+  print theme('signup_status_export_html', $node, $content);
+}
+
+
+/**
+ * Prepare a roster of signups for the given node
+ *
+ * @param $node
+ *   The node to prepare a roster for.
+ * @return 
+ *   The themed HTML of the roster.
+ */
+function signup_status_prepare_roster($node) {
+  $output = '';
+  $codes = signup_status_codes();
+  $signups = signup_status_get_signups($node);
+  
+  $header = array(
+    theme('table_select_header_cell'),
+    t('Name'),
+    t('Extra Information'),
+    t('Signup time'),
+    t('Status'),
+  );
+  $rows = array();
+  
+  if (count($signups)) {
+    foreach ($signups as $signup) {
+      $name = $signup->uid ? theme('username', $signup) : $signup->anon_mail;
+      $data = unserialize($signup->form_data);
+      $formatted_data = signup_build_signup_data($data, 'output');
+      $row = array();
+      $row[] = '<input type="checkbox" />';
+      $row[] = $name;
+      $row[] = $formatted_data;
+      $row[] = format_date($signup->signup_time);
+      $row[] = $codes[$signup->status]['name'];
+      $rows[] = $row;
+    }
+  }
+  else {
+    $rows[] = array(array('data' => t('No signups available.'), 'colspan' => '6'));
+  }
+  
+  $output .= theme('table', $header, $rows);
+  return $output;
+}
+
+
+/**
+ * Theme function for the signup roster
+ */
+function theme_signup_status_export_html($node, $content) {
+  global $base_url;
+  $title = t('Roster for !title', array('!title' => check_plain($node->title)));
+  $content = "<h1>". $title ."</h1>\n" . $content;
+  
+  $html = "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">\n";
+  $html .= '<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">';
+  $html .= "<head>\n<title>". $title ."</title>\n";
+  $html .= '<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />';
+  $html .= '<base href="'. $base_url .'/" />' . "\n";
+  $html .= "<style type=\"text/css\">\n@import url(misc/print.css);\n</style>\n";
+  $html .= "</head>\n<body>\n". $content ."\n</body>\n</html>\n";
+  return $html;
+}
+
+
+/**
+ * Retrieve all available status codes.
+ *
+ * @return 
+ *   An array of status code arrays, keyed using the status code id, cid.  Each status code array contains the following keys / values:
+ *   - "name": The display name of the status code.
+ *   - "description": The long-form description of the status code.
+ *   - "mod_signup_count": A boolean value stating whether signups using the status code should modify the total signup count (i.e. for the "wait listed" status code).
+ */
+function signup_status_codes() {
+  static $codes = array();
+  if (!count($codes)) {
+    $result = db_query("SELECT * FROM {signup_status_codes}");
+    while ($row = mysql_fetch_object($result)) {
+      $codes[$row->cid] = array('name' => $row->name, 'description' => $row->description, 'mod_signup_count' => $row->mod_signup_count);
+    }
+  }
+  return $codes;
+}
+
+
+/**
+ * Get all signups for a given node.
+ * 
+ * @param $node
+ *   The node object for which to retrieve signup information .
+ * @return
+ *   An array of signup objects that will contain the following properties:
+ *   - "uid": The uid of the user.
+ *   - "name": The name of the user.
+ *   - "anon_mail": The email address provided by the user when she signed up, if applicable.
+ *   - "signup_time": A UNIX timestamp indicating the time of the user's signup.
+ *   - "form_data": A serialized array of the user's signup form data.  See signup_build_signup_data for usage.
+ *   - "status": The current status code of the user's signup.
+ */
+function signup_status_get_signups($node) {
+  $signups = array();
+  $result = db_query("SELECT u.uid, u.name, s.* FROM {signup_log} s INNER JOIN {users} u ON u.uid = s.uid WHERE s.nid = %d ORDER BY u.name", $node->nid);
+  while ($row = db_fetch_object($result)) {
+    $signups[] = $row;
+  }
+  return $signups;
+}
+
+
+/**
+ * Get a user's current signup status to a node
+ *
+ * @param $uid
+ *   The uid for the user.
+ * @param $nid
+ *   The nid for the node.
+ * @param $anon_mail
+ *   The email address provided by the user when she registered, if applicable.
+ */
+function signup_status_user_signup_status($uid, $nid, $anon_mail = NULL) {
+  return db_result(db_query("SELECT status FROM {signup_log} WHERE uid = %d AND nid = %d AND anon_mail = '%s'"));
+}
+
+
+/**
+ * Implementation of hook_update_signup_status
+ */
+function signup_status_update_signup_status($uid, $nid, $curr_cid, $new_cid, $anon_mail = NULL) {
+  db_query("UPDATE {signup_log} SET status = %d WHERE uid = %d AND nid = %d AND anon_mail = '%s'", $new_cid, $uid, $nid, $anon_mail);
+}

@@ -1,0 +1,4 @@
+; $Id$
+name = "Signup Status"
+description = "Allow signed up users to be of a certain status"
+dependencies = signup

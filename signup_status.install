@@ -1,0 +1,45 @@
+<?php
+// $Id$
+
+/**
+ * Implementation of hook_install()
+ */
+function signup_status_install() {
+  switch ($GLOBALS['db_type']) {
+    case 'mysqli':
+    case 'mysql':
+      db_query("CREATE TABLE IF NOT EXISTS {signup_status_codes} (
+        cid int unsigned NOT NULL auto_increment,
+        name varchar(128) NOT NULL,
+        description text NOT NULL default '',
+        mod_signup_count int NOT NULL default '0',
+        PRIMARY KEY (cid),
+        UNIQUE KEY name (name)
+      ) /*!40100 DEFAULT CHARACTER SET utf8 */;");
+      db_query("ALTER TABLE {signup_log} ADD status int(2) NOT NULL default '1'");  
+      signup_status_insert_default_codes();    
+      break;
+  }
+}
+
+
+function signup_status_uninstall() {
+  db_query("DROP TABLE {signup_status_codes}");
+  db_query("ALTER TABLE {signup_log} DROP status");
+  
+  $variables = db_query("SELECT name FROM {variable} WHERE name LIKE 'signup_status%%'");
+  while ($variable = db_fetch_object($variables)) {
+    variable_del($variable->name);
+  }
+}
+
+
+function signup_status_insert_default_codes() {
+  $codes = array(
+    array('name' => t('Approved'), 'description' => t('User\'s signup is approved by the node creator.'), 'mod_signup_count' => FALSE),
+    array('name' => t('Wait Listed'), 'description' => t('User has been wait listed.'), 'mod_signup_count' => TRUE),
+  );
+  foreach ($codes as $code) {
+    db_query("INSERT INTO {signup_status_codes} (name, description, mod_signup_count) VALUES ('%s', '%s', %d)", $code['name'], $code['description'], $code['mod_signup_count']);
+  }
+}
