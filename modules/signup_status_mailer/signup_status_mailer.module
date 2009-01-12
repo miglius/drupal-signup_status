@@ -1,0 +1,110 @@
+<?php
+// $Id$
+
+/**
+ * Implementation of hook_menu()
+ */
+function signup_status_mailer_menu($may_cache) {
+  $items = array();
+ 
+  if ($may_cache) {
+    $items[] = array(
+      'path' => 'admin/settings/signup_status/mailer',
+      'title' => t('Mailer'),
+      'callback' => 'drupal_get_form',
+      'callback arguments' => array('signup_status_mailer_admin_form'),
+      'type' => MENU_LOCAL_TASK,
+    );
+  }
+ 
+  return $items;
+}
+
+
+/**
+ * Menu callback
+ *
+ * @return
+ *   A system settings form
+ */
+function signup_status_mailer_admin_form() {
+  $form = array();
+ 
+  $form['signup_status_mailer_text_subject'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Subject of status e-mails'),
+    '#default_value' => signup_status_mailer_text('subject'),
+    '#description' => signup_status_mailer_text('vars'),
+  );
+  $form['signup_status_mailer_text_body'] = array(
+    '#type' => 'textarea',
+    '#title' => t('Body of status e-mails'),
+    '#default_value' => signup_status_mailer_text('body'),
+    '#description' => signup_status_mailer_text('vars'),
+  );
+  return system_settings_form($form);
+}
+
+
+/**
+ * Process the text for messages.  Inspired by _user_mail_text
+ *
+ * @param $messageid
+ *   The key defining the message.
+ * @param $variables
+ *   An associative array of variables to use when replacing defined variables
+ *   via t().
+ * @return
+ *   Message text
+ */
+function signup_status_mailer_text($messageid, $variables = array()) {
+  // Check if an admin setting overrides the default string.
+  if ($admin_setting = variable_get('signup_status_mailer_text_'. $messageid, FALSE)) {
+    return strtr($admin_setting, $variables);
+  }
+  // No override, return with default strings.
+  switch ($messageid) {
+    case 'vars':
+      return t('Available variables are: !username, !title, !site, !mailto, !login_url, !curr_status, !new_status, !node_url, !node_type');
+     
+    case 'subject':
+      return t('Your signup for !title has been updated', $variables);
+   
+    case 'body';
+      return t("!username,\n\nYour signup status to !title  at !site has been updated from !curr_status to !new_status. You can view the !node_type or cancel your signup by clicking on this link or copying and pasting it in your browser:\n\n!node_url.\n\n\n--  !site team", $variables);
+  }
+}
+
+
+/**
+ * Implementation of hook_update_signup_status
+ *
+ * Send an email to the user notifying them of their new signup status.
+ */
+function signup_status_mailer_update_signup_status($uid, $nid, $curr_cid, $new_cid, $anon_mail = NULL) {
+  $account = user_load(array('uid' => $uid));
+  $mail = $uid ? $account->mail : $anon_mail;
+  $node = node_load($nid);
+  $codes = signup_status_codes(array(), TRUE);
+  $node_types = node_get_types('names');
+  $from = $from = variable_get('site_mail', ini_get('sendmail_from'));
+  $msg_vars = array(
+    '!username' => $account->name,
+    '!title' => check_plain($node->title),
+    '!site' => variable_get('site_name', 'Drupal'),
+    '!mailto' => $mail,
+    '!curr_status' => $codes[$curr_cid]['name'],
+    '!new_status' => $codes[$new_cid]['name'],
+    '!login_url' => url('user', NULL, NULL, TRUE),
+    '!node_url' => url('node/'. $node->nid, NULL, NULL, TRUE),
+    '!node_type' => $node_types[$node->type],
+  );
+  $subject = signup_status_mailer_text('subject', $msg_vars);
+  $body = signup_status_mailer_text('body', $msg_vars);
+  if (drupal_mail('signup_status_mailer', $mail, $subject, $body, $from)) {
+    watchdog('signup', t('Signup status message sent to %name at %mail', array('%name' => $account->name, '%mail' => $mail)), WATCHDOG_NOTICE, l(t('view'), 'node/'. $node->nid .'/signups'));
+  }
+  else {
+    watchdog('signup', t('Error sending signup status message to %name at %mail', array('%name' => $account->name, '%mail' => $mail)), WATCHDOG_NOTICE, l(t('view'), 'node/'. $node->nid .'/signups'));
+  }
+}

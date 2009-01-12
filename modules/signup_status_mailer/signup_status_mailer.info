@@ -1,0 +1,4 @@
+; $Id$
+name = "Signup Status Mailer"
+description = "Send emails to users when their signup status has been changed."
+dependencies = signup_status
