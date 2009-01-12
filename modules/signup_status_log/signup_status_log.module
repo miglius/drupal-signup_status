@@ -1,0 +1,244 @@
+<?php
+// $Id$
+
+
+/**
+ * Implementation of hook_menu()
+ */
+function signup_status_log_menu($may_cache) {
+  $items = array();
+
+  if ($may_cache) {
+    $items[] = array(
+      'path' => 'admin/logs/signup_status',
+      'title' => t('Signup status log'),
+      'callback' => 'signup_status_log_overview',
+      'access' => user_access('administer all signups'),
+    );
+    $items[] = array(
+      'path' => 'admin/logs/signup_status/csv',
+      'callback' => 'signup_status_log_csv',
+      'access' => user_access('administer all signups'),
+      'type' => MENU_CALLBACK
+    );
+  }
+ 
+  return $items;
+}
+
+
+/**
+ * Implementation of hook_form_alter()
+ */
+function signup_status_log_form_alter($form_id, &$form) {
+  if ($form_id == 'signup_form') {
+    $form['#submit']['signup_status_log_signup_form_submit'] = array();
+  }
+ 
+  if ($form_id == 'signup_form_cancel') {
+    $form['#submit']['signup_status_log_signup_form_cancel_submit'] = array();
+  }
+}
+
+
+/**
+ * Handle submission of signup_form
+ */
+function signup_status_log_signup_form_submit($form_id, $form_values) {
+  signup_status_log_status_change($form_values['nid'], $form_values['uid'], $form_values['anon_mail'], $form_values['signup_status']);
+}
+
+
+/**
+ * Handle submission of signup_form_cancel
+ */
+function signup_status_log_signup_form_cancel_submit($form_id, $form_values) {
+  signup_status_log_status_change($form_values['nid'], $form_values['uid'], $form_values['anon_mail'], 0);
+}
+
+
+/**
+ * Implementation of hook_update_signup_status()
+ */
+function signup_status_log_update_signup_status($uid, $nid, $curr_cid, $new_cid, $anon_mail = NULL) {
+  if ($curr_cid != $new_cid) {
+    signup_status_log_status_change($nid, $uid, $anon_mail, $new_cid);
+  }
+}
+
+
+/**
+ * Log the status change
+ *
+ * @param $nid
+ *   The nid of the node
+ * @param $uid
+ *   The uid of the user
+ * @param $anon_mail
+ *   The anon_mail attribute of the signup, if it is anonymous
+ * @param $cid
+ *   The cid of the signup status code
+ */
+function signup_status_log_status_change($nid, $uid, $anon_mail = NULL, $cid) {
+  global $user;
+  $sql = "INSERT INTO {signup_status_log} (nid, uid, anon_mail, cid, timestamp, admin_uid) VALUES (%d, %d, '%s', %d, %d, %d)";
+  db_query($sql, $nid, $uid, $anon_mail, $cid, time(), $user->uid);
+}
+
+
+function signup_status_log_sql() {
+  return "SELECT log.lid, log.anon_mail, log.cid, log.timestamp,
+          node.nid, node.title, node.type,
+          user.uid, user.name,
+          admin.uid AS admin_uid, admin.name AS admin_name
+          FROM {signup_status_log} log
+          LEFT JOIN {node} node ON node.nid = log.nid
+          LEFT JOIN {users} user ON user.uid = log.uid
+          LEFT JOIN {users} admin ON admin.uid = log.admin_uid";
+}
+
+
+/**
+ * Menu callback to view signup status log
+ */
+function signup_status_log_overview() {
+  $codes = signup_status_codes();
+  $node_types = node_get_types('names');
+  $account = new stdClass();
+  $admin = new stdClass();
+ 
+  // Setup the table header
+  $header = array();
+  $header[] = array('data' => t('Date'), 'field' => 'log.lid', 'sort' => 'desc');
+  $header[] = array('data' => t('Title'), 'field' => 'log.nid');
+  $header[] = array('data' => t('User'), 'field' => 'log.uid');
+  $header[] = array('data' => t('Email (if anonymous)'), 'field' => 'log.anon_mail');
+  $header[] = array('data' => t('Status'), 'field' => 'log.cid');
+  $header[] = array('data' => t('Invoked by'), 'field' => 'log.admin_uid');
+  $header[] = array('data' => t('Filter by this'));
+ 
+  // Do the query
+  $sql = signup_status_log_sql();
+  $tablesort = tablesort_sql($header);
+ 
+  // Filter by nid, if defined
+  if ($_GET['nid']) {
+    $result = pager_query($sql ." WHERE log.nid = %d". $tablesort, 50, 0, NULL, $_GET['nid']);
+  }
+  elseif ($_GET['uid']) {
+    $result = pager_query($sql ." WHERE log.uid = %d". $tablesort, 50, 0, NULL, $_GET['uid']);
+  }
+  else {
+    $result = pager_query($sql . $tablesort, 50);
+  }
+ 
+  // Generate the log table rows
+  $rows = array();
+  while ($row = db_fetch_object($result)) {
+    $account->uid = $row->uid;
+    $account->name = $row->name;
+    $admin->uid = $row->admin_uid;
+    $admin->name = $row->admin_name;
+    $status = $row->cid ? $codes[$row->cid]['name'] : t('Cancelled');
+   
+    $filters = array(
+      'user' => array(
+        'title' => t('user'),
+        'href' => 'admin/logs/signup_status',
+        'query' => "uid=$account->uid",
+      ),
+    );
+    if ($row->nid) {
+      $filters['type'] = array(
+        'title' => t('!type', array('!type' => $node_types[$row->type])),
+        'href' => 'admin/logs/signup_status',
+        'query' => "nid=$row->nid"
+      );
+    }
+   
+    $rows[] = array(
+      // Columns
+      'data' => array(
+        format_date($row->timestamp, 'small'),
+        $row->nid ? l($row->title, 'node/'. $row->nid) : t('This node no longer exists'),
+        theme('username', $account),
+        check_plain($row->anon_mail),
+        $status,
+        theme('username', $admin),
+        theme('links', $filters),
+      ),
+    );
+  }
+
+  if (!$rows) {
+    $rows[] = array(array('data' => t('No log messages available.'), 'colspan' => 6));
+  }
+
+  $output = '';
+  $links = array(
+    'csv' => array(
+      'title' => t('Download as CSV'),
+      'href' => 'admin/logs/signup_status/csv',
+    ),
+  );
+  if ($_GET['nid'] || $_GET['uid']) {
+    $links['clear'] = array(
+      'title' => t('Clear filters'),
+      'href' => 'admin/logs/signup_status',
+    );
+  }
+  $output .= theme('links', $links);
+  $output .= theme('table', $header, $rows);
+  $output .= theme('pager', NULL, 50, 0);
+
+  return $output;
+}
+
+
+function signup_status_log_csv() {
+  if (!function_exists('fputcsv')) {
+    drupal_set_message(t('PHP 5.1 or greater required for CSV generation.'), 'error');
+    return '';
+  }
+  $codes = signup_status_codes();
+  $node_types = node_get_types('names');
+  $result = db_query(signup_status_log_sql());
+ 
+  header('Content-Type: text/csv');
+  header('Content-Disposition: attachment; filename="signuplog-'. date('Ymd') .'.csv"');
+  $output = fopen('php://output', 'w');
+ 
+  $header = array(
+    t('NID'),
+    t('Node title'),
+    t('Node type'),
+    t('UID'),
+    t('Username'),
+    t('Anonymous email'),
+    t('Time'),
+    t('Admin UID'),
+    t('Admin username')
+  );
+  fputcsv($output, $header);
+ 
+  while ($row = db_fetch_object($result)) {
+    $username = $row->name;
+    $themed_name = strip_tags(theme('username', $row));
+    if ($themed_name != $username) {
+      $username = $themed_name .' ('. $row->name .')';
+    }
+    $entry = array(
+      $row->nid,
+      $row->title,
+      $node_types[$row->type],
+      $row->uid,
+      $username,
+      $row->anon_mail,
+      format_date($row->timestamp, 'small'),
+      $row->admin_uid,
+      $row->admin_name,
+    );
+    fputcsv($output, $entry);
+  }
+  fclose($output);
+}

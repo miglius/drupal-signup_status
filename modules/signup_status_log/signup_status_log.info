@@ -1,0 +1,4 @@
+; $Id$
+name = "Signup Status Log"
+description = "Log changes to users' signup status."
+dependencies = signup_status

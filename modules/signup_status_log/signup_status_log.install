@@ -1,0 +1,66 @@
+<?php
+// $Id$
+
+/**
+ * Implementation of hook_install()
+ */
+function signup_status_log_install() {
+  switch ($GLOBALS['db_type']) {
+    case 'mysqli':
+    case 'mysql':
+      /**
+      * Storage of status codes, names and descriptions
+      *   lid: The log item id
+      *   nid: The node id
+      *   uid: The user id
+      *   anon_mail: The anon_mail attribute of the signup, if it was anonymous
+      *   cid: The status code id
+      *   timestamp: The timestamp of the transition
+      */
+      db_query("CREATE TABLE IF NOT EXISTS {signup_status_log} (
+        lid int NOT NULL auto_increment,
+        nid int unsigned NOT NULL,
+        uid int unsigned NOT NULL,
+        anon_mail varchar(255) NOT NULL default '',
+        cid int unsigned NOT NULL,
+        timestamp int unsigned NOT NULL default '0',
+        admin_uid int unsigned NOT NULL,
+        PRIMARY KEY (lid),
+        KEY nid (nid),
+        KEY uid (uid),
+        KEY cid (cid)
+      ) /*!40100 DEFAULT CHARACTER SET utf8 */;");
+     
+      // Insert default values for all existing signups
+      db_query("INSERT INTO {signup_status_log} (nid, uid, anon_mail, cid, timestamp) SELECT nid, uid, anon_mail, status, signup_time FROM {signup_log}");
+      break;
+  }
+}
+
+
+/**
+ * Implementation of hook_uninstall()
+ */
+function signup_status_log_uninstall() {
+  db_query("DROP TABLE IF EXISTS {signup_status_log}");
+  $variables = db_query("SELECT name FROM {variable} WHERE name LIKE 'signup_status_log%%'");
+  while ($variable = db_fetch_object($variables)) {
+    variable_del($variable->name);
+  }
+}
+
+
+function signup_status_log_update_1() {
+  $ret = array();
+  $ret[] = update_sql("ALTER TABLE {signup_status_log} ADD admin_uid int unsigned NOT NULL");
+  return $ret;
+}
+
+
+function signup_status_log_update_2() {
+  $ret = array();
+  $ret[] = update_sql("ALTER TABLE {signup_status_log}
+                        ADD lid int NOT NULL auto_increment FIRST,
+                        ADD PRIMARY KEY (lid)");
+  return $ret;
+}
