@@ -1377,103 +1377,13 @@ function signup_status_signup_data_alter(&$data, $signup, $nid) {
   }
 }
 
-
 /**
- * Implementation of hook_views_tables()
+ * Implementation of hook_views_api().
  */
-function signup_status_views_tables() {
-  $tables['signup_status_node_limits'] = array(
-    'name' => 'signup_status_node_limits',
-    'join' => array(
-      'type' => 'inner',
-      'left' => array(
-        'table' => 'node',
-        'field' => 'nid'
-      ),
-      'right' => array(
-        'field' => 'nid'
-      ),
-    ),
-    'fields' => array(
-      'signup_limits' => array(
-        'name' => t('Signup Status: Limits'),
-        'handler' => 'views_handler_field_signup_status_limits',
-        'sortable' => false,
-        'notafield' => true,
-      ),
-    ),
-    'filters' => array(),
-  );
-  return $tables;
-}
-
-
-/**
- * Implementation of hook_views_tables_alter:
- * Provide views columns for the signup_log table
- */
-function signup_status_views_tables_alter(&$tables) {
-  $tables['signup_log']['fields']['status'] = array(
-    'name' => t('Signup: User: Status'),
-    'handler' => 'views_handler_field_signup_status_code',
-  );
-  $codes = signup_status_codes();
-  $options = array();
-  foreach ($codes as $cid => $code) {
-    $options[$cid] = $code['name'];
-  }
-  $tables['signup_log']['filters']['signup_status'] = array(
-    'name' => t('Signup: User: Status'),
-    'field' => 'status',
-    'operator' => array('=' => t('is')),
-    'value' => array(
-      '#type' => 'select',
-      '#options' => $options,
-    ),
+function signup_status_views_api() {
+  return array(
+    'api' => 2.0,
+    'path' => drupal_get_path('module', 'signup_status') .'/views',
   );
 }
 
-
-/**
- * Views field handler for displaying signup status limits
- */
-function views_handler_field_signup_status_limits($fieldinfo, $fielddata, $value, $data) {
-  $nid = $data->nid;
-  $codes = signup_status_codes(array('mod_signup_count = 1'));
-  $limits = signup_status_get_node_code_limits($nid);
-  $totals = signup_status_get_node_code_totals($nid);
-  $total_approved = signup_status_get_total_approved_signups($nid);
-  $totals[1] = $total_approved;
-  $full = TRUE;
-  $output = '';
-  $items = array();
- 
-  foreach ($codes as $cid => $code) {
-    // Don't show the status code in the list if it's set to -1 (unavailable)
-    if ($limits[$cid] != -1) {
-      if ($limits[$cid] > $totals[$cid] || $limits[$cid] == 0) {
-        $full = FALSE;
-      }
-      $total = $totals[$cid];
-      $limit = $limits[$cid] > 0 ? $limits[$cid] : t('No limit');
-      $name = $code['name'];
-      $items[] = t('!name: @total / @limit', array('!name' => $name, '@total' => $total, '@limit' => $limit));
-    }
-  }
- 
-  if ($full) {
-    $output .= "<strong>". t('No signups available') ."</strong><br />";
-  }
-  $output .= theme('item_list', $items);
- 
-  return $output;
-}
-
-
-/**
- * Views field handler for display the status code name
- */
-function views_handler_field_signup_status_code($fieldinfo, $fielddata, $value, $data) {
-  $codes = signup_status_codes();
-  return $codes[$value]['name'];
-}
