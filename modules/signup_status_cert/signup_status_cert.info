@@ -1,0 +1,4 @@
+; $Id$
+name = "Signup Status Certificates"
+description = "Allow signup-enabled node creators to grant users a certificate when they 'complete' a signup."
+dependencies = signup_status token
