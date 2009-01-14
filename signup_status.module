@@ -1377,6 +1377,7 @@ function signup_status_signup_data_alter(&$data, $signup, $nid) {
   }
 }
 
+
 /**
  * Implementation of hook_views_api().
  */
@@ -1385,5 +1386,49 @@ function signup_status_views_api() {
     'api' => 2.0,
     'path' => drupal_get_path('module', 'signup_status') .'/views',
   );
+}
+
+
+/**
+ * Implementation of hook_action_info().
+ */
+function signup_status_action_info() {
+  return array(
+    'signup_status_alter_action' => array(
+      'type' => 'signup',
+      'description' => t('Alter signup status'),
+      'configurable' => TRUE,
+    ),
+  );
+}
+
+function signup_status_alter_action(&$signup, $context) {
+  $status_codes = signup_status_codes();
+  $signup->status = $context['signup_status'];
+  db_query("UPDATE {signup_log} SET status = %d WHERE sid = %d", $signup->status, $signup->sid);
+  watchdog('action', 'Set status of %signup_label to %status_name.', array('%signup_label' => $signup->label, '%status_name' => $status_codes[$signup->status]['name']));
+}
+
+function signup_status_alter_action_form($context) {
+  $options = array();
+  foreach (signup_status_codes() as $cid => $code) {
+    $options[$cid] = $code['name'];
+  }
+  $form['signup_status'] = array(
+    '#type' => 'select',
+    '#title' => t('Signup status'),
+    '#options' => $options,
+  );
+  return $form;
+}
+
+function signup_status_alter_action_validate($form, $form_state) {
+  if ($form_state['values']['signup_status'] == 0) {
+    form_set_error('signup_status', t('You must select a status.'));
+  }
+}
+
+function signup_status_alter_action_submit($form, $form_state) {
+  return array('signup_status' => $form_state['values']['signup_status']);
 }
 
