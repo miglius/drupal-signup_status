@@ -211,12 +211,6 @@ function signup_status_admin_form_edit($cid = NULL) {
     '#description' => t('If selected, users signed up with this status code will be considered in addition to the standards signup count, and node creators will be able to set limits for each status code accordingly.'),
     '#default_value' => $cid ? $codes[$cid]['mod_signup_count'] : NULL,
   );
-  $form['auto_transition'] = array(
-    '#type' => 'checkbox',
-    '#title' => t('Auto-transition to %approved', array('%approved' => $codes[1]['name'])),
-    '#default_value' => $cid ? $codes[$cid]['auto_transition'] : NULL,
-    '#description' => t('If selected, users signed up using this status will be automatically transitioned to the %approved state when seats become available.  This value is only used if %mod_signup_count is checked.', array('%approved' => $codes[1]['name'], '%mod_signup_count' => t('Modify the total signup count'))),
-  );
   $form['show_on_form'] = array(
     '#type' => 'checkbox',
     '#title' => t('Show on the signup form'),
@@ -235,7 +229,6 @@ function signup_status_admin_form_edit($cid = NULL) {
   // don't allow mod_signup_count to be changed on cid 1 (registered)
   if ($cid == 1) {
     $form['mod_signup_count']['#type'] = 'value';
-    $form['auto_transition']['#type'] = 'value';
   }
   return $form;
 }
@@ -252,7 +245,7 @@ function signup_status_admin_form_edit_submit($form_id, $form_values, $new = FAL
   else {
     // Handle a new status code request
     if ($new) {
-      $result = db_query("INSERT INTO {signup_status_codes} (name, description, mod_signup_count, show_on_form, auto_transition) VALUES ('%s', '%s', %d, %d, %d)", $form_values['name'], $form_values['description'], $form_values['mod_signup_count'], $form_values['show_on_form'], $form['auto_transition']);
+      $result = db_query("INSERT INTO {signup_status_codes} (name, description, mod_signup_count, show_on_form) VALUES ('%s', '%s', %d, %d, %d)", $form_values['name'], $form_values['description'], $form_values['mod_signup_count'], $form_values['show_on_form']);
       if ($result) {
         drupal_set_message(t('Added the signup status code.'));
         drupal_goto('admin/settings/signup_status');
@@ -260,7 +253,7 @@ function signup_status_admin_form_edit_submit($form_id, $form_values, $new = FAL
     }
     // Handle an update request
     else {
-      $result = db_query("UPDATE {signup_status_codes} SET name = '%s', description = '%s', mod_signup_count = %d, show_on_form = %d, auto_transition = %d WHERE cid = %d", $form_values['name'], $form_values['description'], $form_values['mod_signup_count'], $form_values['show_on_form'], $form_values['auto_transition'], $form_values['cid']);
+      $result = db_query("UPDATE {signup_status_codes} SET name = '%s', description = '%s', mod_signup_count = %d, show_on_form = %d WHERE cid = %d", $form_values['name'], $form_values['description'], $form_values['mod_signup_count'], $form_values['show_on_form'], $form_values['cid']);
       if ($result) {
         drupal_set_message(t('Updated the signup status code.'));
         drupal_goto('admin/settings/signup_status');
@@ -318,7 +311,7 @@ function signup_status_admin_confirm_delete_submit($form_id, $form_values) {
 function signup_status_node_admin($node) {
   $output = '';
   $output .= '<h3>'. t('Signup summary') .'</h3>';
-  $output .= drupal_get_form('signup_status_node_admin_summary_form', $node);
+  $output .= drupal_get_form('signup_node_admin_summary_form', $node);
   $output .= '<h3>'. t('Signup details') .'</h3>';
   $output .= drupal_get_form('signup_status_node_admin_form', $node);
   // Add a form to allow the administrator to signup other users.
@@ -328,112 +321,10 @@ function signup_status_node_admin($node) {
 
 
 /**
- * Provide what is essentially a replacement for the signup module's \
- * node admin summary form.
- *
- * @param $node
- *   The node object to provide the form for.
- * @return
- *   A structured form array.
- */
-function signup_status_node_admin_summary_form($node) {
-  $limits = signup_status_get_node_code_limits($node->nid);
-  $totals = signup_status_get_node_code_totals($node->nid);
-  $total_approved = signup_status_get_total_approved_signups($node->nid);
-  $totals[1] = $total_approved;
-  $codes = signup_status_codes();
-  $help_codes = array();
-
-  foreach ($codes as $cid => $code) {
-    if (!$code['mod_signup_count']) {
-      $help_codes[] = $code['name'];
-    }
-  }
-  $help = '<p>'. t('The following statuses are considered to be %approved: %codes.', array('%approved' => $codes[1]['name'], '%codes' => implode($help_codes, ', '))) .'</p>';
-  $form['help'] = array('#value' => $help);
-
-  if ($node->signup_close_signup_limit && $node->signup_total >= $node->signup_close_signup_limit) {
-    $form['status'] = array(
-      '#value' => t('Closed (limit reached)'),
-    );
-  }
-  else {
-    $form['status'] = array(
-      '#type' => 'select',
-      '#options' => array(0 => t('Closed'), 1 => t('Open')),
-      '#default_value' => $node->signup_status,
-    );
-  }
-
-  // Manually create the "registered" element
-  $form['cid_status_1'] = array(
-    '#value' => $total_approved,
-  );
-  
-  $codes = signup_status_codes(array('mod_signup_count = 1'));
-  foreach ($codes as $cid => $code) {
-    $total = $totals[$cid];
-    $limit = $limits[$cid];
-    if ($limit == -1) {
-      $limit = t('Not allowed');
-    }
-    else if ($limit == 0) {
-      $limit = t('No limit');
-    }
-    $value = $limits[$cid] == -1 ? $limit : t('!total / !limit', array('!total' => $total, '!limit' => $limit));
-    $form['cid_status_'. $cid] = array(
-      '#value' => $value,
-    );
-  }
-  $form['submit'] = array(
-    '#type' => 'submit',
-    '#value' => t('Update'),
-  );
-  $form['nid'] = array(
-    '#type' => 'value',
-    '#value' => $node->nid,
-  );
-  return $form;
-}
-
-
-/**
  * Handle submission of signup_status_node_admin_summary_form
  */
 function signup_status_node_admin_summary_form_submit($form_id, $form_values) {
   signup_admin_node_form_submit($form_id, $form_values);
-}
-
-
-/**
- * Theme the node admin signup summary form
- */
-function theme_signup_status_node_admin_summary_form($form) {
-  $all_codes = signup_status_codes();
-  $codes = signup_status_codes(array('mod_signup_count = 1'));
-
-  $row = array();
-  $row[] = drupal_render($form['status']);
-
-  $header = array();
-  $header[] = t('Registration status');
-
-  // Manually render the "registered" field
-  $header[] = $all_codes[1]['name'];
-  $row[] = drupal_render($form['cid_status_1']);
-  
-  foreach ($codes as $cid => $code) {
-    $header[] = $code['name'];
-    $row[] = drupal_render($form['cid_status_'. $cid]);
-  }
-
-  $header[] = t('Operations');
-  $help = '<div class="help">'. drupal_render($form['help']) .'</div>';
-  $row[] = drupal_render($form);
-
-  $output = theme('table', $header, array($row));
-  $output .= $help;
-  return $output;
 }
 
 
@@ -450,10 +341,6 @@ function signup_status_node_admin_form($node) {
   $form = array();
   $codes = signup_status_codes();
   $signups = signup_status_get_signups($node->nid);
-  $limits = signup_status_get_node_code_limits($node->nid);
-  $totals = signup_status_get_node_code_totals($node->nid);
-  $total_approved = signup_status_get_total_approved_signups($node->nid);
-  $totals[1] = $total_approved;
 
   $form['options'] = array('#type' => 'fieldset',
     '#title' => t('Update options'),
@@ -542,90 +429,6 @@ function signup_status_node_admin_form_submit($form_id, $form_values) {
     }
     call_user_func_array($function, $args);
   }
-}
-
-
-/**
- * Handle validation of the signup status node admin form
- */
-function signup_status_node_admin_form_validate($form_id, $form_values) {
-  $users = array_filter($form_values['users']);
-  if (count($users) == 0) {
-    form_set_error('', t('No items selected.'));
-  }
-
-  // Stop validation if user is cancelling signups - this should always pass
-  if ($form_values['operation'] == 'cancel') {
-    return;
-  }
-
-  // Make sure the user hasn't selected more users than is possible for the
-  // new status
-  $operations = module_invoke_all('signup_status_operations');
-  $operation = $operations[$form_values['operation']];
-  if ($operation['callback'] == 'signup_status_operations') {
-    $nid = $form_values['nid'];
-    $cid = $operation['callback arguments'][1];
-    $users = array_filter($form_values['users']);
-    $signups = signup_status_get_signups($nid);
-    $codes = signup_status_codes();
-    $limits = signup_status_get_node_code_limits($nid);
-    $totals = signup_status_get_node_code_totals($nid);
-    $total_approved = signup_status_get_total_approved_signups($nid);
-    $totals[1] = $total_approved;
-    $target_limit = $codes[$cid]['mod_signup_count'] ? $limits[$cid] : $limits[1];
-    $target_total = $codes[$cid]['mod_signup_count'] ? $totals[$cid] : $totals[1];
-  
-    // Only perform the check for available seats if the target limit isn't
-    // set to "0", which would mean the user doesn't want a signup limit
-    if ($target_limit != 0) {
-      foreach ($signups as $signup) {
-        if (in_array($signup->uid, $users)) {
-          $cmp_cid = $signup->status;
-          // Increase the target limit cid if the user is already signed up
-          // for that cid,
-          // OR the user is already "approved" and is switching to another
-          //   "approved" equivalent code
-          // OR switching from a "approved" equivalent code to "approved"
-          // OR switch from a "approved" equivalent code to a "approved"
-          //   equivalent code
-          if ($cmp_cid == $cid ||
-                ($cmp_cid == 1 && !$codes[$cid]['mod_signup_count']) ||
-                (!$codes[$cmp_cid]['mod_signup_count'] && $cid == 1) ||
-                (!$codes[$cmp_cid]['mod_signup_count'] && !$codes[$cid]['mod_signup_count'])) {
-            $target_limit += 1;
-          }
-        }
-      }
-      $available = $target_limit - $target_total;
-      if (count($users) > $available) {
-        form_set_error('', t('There are not enough seats available in that status for all of the users you have selected.'));
-      }
-    }
-  }
-}
-
-
-/**
- * Get the total number of approved signups for a given nid.  This includes
- * any signups set at a status code that essentially equals "approved."
- *
- * @param $nid
- *   The nid for the node.
- * @return
- *   An integer - the total number of approved signups.
- */
-function signup_status_get_total_approved_signups($nid) {
-  $cids = array(1);
-  $codes = signup_status_codes();
-  foreach ($codes as $cid => $code) {
-    if (!$codes[$cid]['mod_signup_count'] || $cid == 1) {
-      $cids[] = $cid;
-    }
-  }
-  $sql = "SELECT COUNT(*) FROM {signup_log} WHERE nid = %d AND status IN (%s)";
-  $result = db_result(db_query($sql, $nid, implode($cids, ', ')));
-  return $result;
 }
 
 
@@ -722,14 +525,6 @@ function signup_status_users_to_accounts($users) {
  */
 function signup_status_form_alter($form_id, &$form) {
   switch ($form_id) {
-    case $form['type']['#value'] .'_node_form' && isset($form['signup']):
-      signup_status_alter_node_form($form_id, $form);
-      break;
-  
-    case 'signup_admin_node_form':
-      signup_status_alter_signup_admin_node_form($form_id, $form);
-      break;
-  
     case 'signup_broadcast_form':
       signup_status_alter_signup_broadcast_form($form_id, $form);
       break;
@@ -737,35 +532,6 @@ function signup_status_form_alter($form_id, &$form) {
     case 'signup_form':
       signup_status_alter_signup_form($form_id, $form);
       break;
-  }
-}
-
-
-/**
- * Alter the node add / edit form to get all available statuses that modify
- * the signup limit and add a field for their limit.
- */
-function signup_status_alter_node_form($form_id, &$form) {
-  $node = $form['#node'];
-  $codes = signup_status_codes(array('mod_signup_count = 1'));
-  $has_codes = count($codes);
-  if ($has_codes) {
-    $form['signup']['node_settings']['settings']['signup_status_close_cid_limits'] = array(
-      '#type' => 'fieldset',
-      '#title' => t('Signup limits'),
-      '#tree' => TRUE
-    );
-    foreach ($codes as $cid => $code) {
-      $has_codes = TRUE;
-      $form['signup']['node_settings']['settings']['signup_status_close_cid_limits'][$cid] = array(
-        '#type' => 'textfield',
-        '#title' => t('%name status limit', array('%name' => $code['name'])),
-        '#default_value' => isset($node->signup_status_close_cid_limits[$cid]) ? $node->signup_status_close_cid_limits[$cid] : 0,
-        '#size' => 4, '#maxlength' => 8,
-        '#description' => t('Maximum number of users who can signup for the %name status. If set to 0, there is no limit. If set to -1, this status will not be available to users during signup. Status description: %description', array('%name' => $code['name'], '%description' => $code['description'])),
-      );
-    }
-    $form['signup']['node_settings']['settings']['signup_close_signup_limit']['#type'] = 'value';
   }
 }
 
@@ -868,11 +634,7 @@ function signup_status_alter_signup_form($form_id, &$form) {
     return;
   }
   foreach ($codes as $cid => $code) {
-    $limit = $node->signup_status_close_cid_limits[$cid];
-    $total = $node->signup_status_cid_totals[$cid];
-    if ($total < $limit || $limit == 0) {
-      $options[$cid] = $code['name'];
-    }
+    $options[$cid] = $code['name'];
   }
   if (count($options)) {
     $form['collapse']['signup_status'] = array(
@@ -891,163 +653,6 @@ function signup_status_alter_signup_form($form_id, &$form) {
  */
 function signup_status_alter_signup_form_submit($form_id, $form_values) {
   signup_status_update_signup_status($form_values['uid'], $form_values['nid'], NULL, $form_values['signup_status'], $form_values['anon_mail']);
-}
-
-
-/**
- * Alter the signup admin node form, provided in signup.module.  We simply
- * make it so users can't alter the signup limit.
- */
-function signup_status_alter_signup_admin_node_form($form_id, &$form) {
-  $form['limit']['#type'] = 'markup';
-  $form['limit']['#value'] = $form['limit']['#default_value'];
-
-  if (!isset($form['status']['#options'])) {
-    unset($form['submit']);
-  }
-}
-
-
-/**
- * Implementation of hook_nodeapi
- */
-function signup_status_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
-  if ($node->signup) {
-    
-    // load
-    if ($op == 'load') {
-      $limits = signup_status_get_node_code_limits($node->nid);
-      $totals = signup_status_get_node_code_totals($node->nid);
-      $node->signup_status_close_cid_limits = $limits;
-      $node->signup_status_cid_totals = $totals;
-    }
-
-    // submit
-    if ($op == 'submit') {
-      global $form_values;
-      // Programmatically set (override) the overall signup limit.
-      // We do this here to be sure it happens before the insert / update hooks are called.
-      $node->signup_close_signup_limit = 0;
-      $codes = signup_status_codes();
-      foreach ($codes as $cid => $code) {
-        $limit = $node->signup_status_close_cid_limits[$cid];
-        $node->signup_close_signup_limit += ($limit == -1 ? 0 : $limit);
-      }
-      $form_values['signup_close_signup_limit'] = $node->signup_close_signup_limit;
-    }
-    
-    // insert / update
-    if ($op == 'insert' || $op == 'update') {
-      $codes = signup_status_codes();
-      $cur_limit = db_result(db_query("SELECT close_signup_limit FROM {signup} WHERE nid = %d", $node->nid));
-      foreach ($codes as $cid => $code) {
-        // Store the saved signup status code limits
-        $limit = $node->signup_status_close_cid_limits[$cid];
-        signup_status_set_node_code_limit($node->nid, $cid, $limit);
-      }
-      // if the signup limit has been increased, migrate users to "approved" status, if necessary
-      if ($node->nid && $node->signup_close_signup_limit > $cur_limit) {
-        signup_status_auto_transition($node->nid);
-      }
-    }
-  
-  }
-}
-
-
-/**
- * Auto-transition users from non-approved status to approved, if seats are
- * available to move users into.  Generally called via cron.
- *
- * @param $nid
- *   The nid for the node.
- * @return
- *   Void.
- */
-function signup_status_auto_transition($nid) {
-  // check to see if there are "approved" seats available
-  $limits = signup_status_get_node_code_limits($nid);
-  $totals = signup_status_get_node_code_totals($nid);
-  $seats_available = $limits[1] - $totals[1];
-  if ($seats_available <= 0) {
-    // do nothing, we can't transition any users because "approved" slots are full
-  }
-  else {
-    $codes = signup_status_codes(array('mod_signup_count = 1'));
-    $auto_transition_codes = array();
-    foreach ($codes as $cid => $code) {
-      if ($code['auto_transition']) {
-        $auto_transition_codes[] = $cid;
-      }
-    }
-    if (count($auto_transition_codes)) {
-      $sql = "SELECT * FROM {signup_log} WHERE nid = %d AND status IN (%s) ORDER BY signup_time DESC LIMIT %d";
-      $result = db_query($sql, $nid, implode($auto_transition_codes, ', '), $seats_available);
-      while ($row = db_fetch_object($result)) {
-        signup_status_invoke_all($row->uid, $nid, $row->status, 1, $row->anon_mail);
-      }
-      drupal_set_message(t('Automatically transitioned %num users to the %approved status.', array('%num' => db_num_rows($result), '%approved' => $codes[1]['name'])));
-    }
-  }
-}
-
-
-/**
- * Set the limit for the number of signups allowed for a given status code.
- *
- * @param $nid
- *   The nid for the node.
- * @param $cid
- *   The status code to set a limit on.
- * @param $limit
- *   An integer defining the limit to set.
- * @return
- *   Void.
- */
-function signup_status_set_node_code_limit($nid, $cid, $limit) {
-  db_query("DELETE FROM {signup_status_node_limits} WHERE nid = %d AND cid = %d", $nid, $cid);
-  db_query("INSERT INTO {signup_status_node_limits} (nid, cid, close_signup_limit) VALUES (%d, %d, %d)", $nid, $cid, $limit);
-}
-
-
-/**
- * Get the limit for each signup status code for a given node.
- *
- * @param $nid
- *   The nid for the node.
- * @return
- *   An array, keyed by status code id (cid) with the value being the limit on the number of signups with that status code
- */
-function signup_status_get_node_code_limits($nid) {
-  $limits = array();
-  $result = db_query("SELECT cid, close_signup_limit FROM {signup_status_node_limits} WHERE nid = %d", $nid);
-  while ($row = db_fetch_object($result)) {
-    $limits[$row->cid] = $row->close_signup_limit;
-  }
-  return $limits;
-}
-
-
-/**
- * Get total signups for each signup status code for a given node
- *
- * @param $nid
- *   The nid for the node.
- * @return
- *   An array, keyed by status code id (cid) with the value being the total
- *   number of signups with that status code
- */
-function signup_status_get_node_code_totals($nid) {
-  $totals = array();
-  $codes = signup_status_codes();
-  foreach ($codes as $cid => $code) {
-    $totals[$cid] = 0;
-  }
-  $signups = signup_status_get_signups($nid);
-  foreach ($signups as $signup) {
-    $totals[$signup->status] += 1;
-  }
-  return $totals;
 }
 
 
@@ -1276,7 +881,6 @@ function signup_status_codes($args = array(), $with_cancelled = FALSE) {
       'name' => $row->name,
       'description' => $row->description,
       'mod_signup_count' => $row->mod_signup_count,
-      'auto_transition' => $row->auto_transition,
       'show_on_form' => $row->show_on_form,
     );
   }
