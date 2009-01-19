@@ -2,6 +2,11 @@
 // $Id$
 
 /**
+ * @file
+ * Implements signup status views fiilter handler
+ */
+
+/**
  * Filter signups based on their signup status.
  */
 class signup_status_handler_filter_signup_status extends views_handler_filter_in_operator {

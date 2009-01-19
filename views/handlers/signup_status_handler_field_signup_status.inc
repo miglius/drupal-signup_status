@@ -2,6 +2,11 @@
 // $Id$
 
 /**
+ * @file
+ * Implements signup status views field handler
+ */
+
+/**
  * Field handler to display the status of a specific signup.
  */
 class signup_status_handler_field_signup_status extends views_handler_field {

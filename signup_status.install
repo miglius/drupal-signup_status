@@ -2,98 +2,96 @@
 // $Id$
 
 /**
- * Implementation of hook_install()
+ * @file
+ * signup_status module installation and upgrade code.
+ */
+
+//////////////////////////////////////////////////////////////////////////////
+// Core API hooks
+
+/**
+ * Implementation of hook_enable().
+ */
+function signup_status_enable() {
+  drupal_set_message(t('signup_status module successfully installed. Please review the available <a href="@settings">configuration settings</a>.', array('@settings' => url('admin/settings/signup_status'))));
+}
+
+/**
+ * Implementation of hook_install().
  */
 function signup_status_install() {
-  switch ($GLOBALS['db_type']) {
-    case 'mysqli':
-    case 'mysql':
-      /**
-      * Storage of status codes, names and descriptions
-      *   cid: Status code primary key.
-      *   name: Display name of the status code/
-      *   description: Long description of status code.  Used on node edit form
-      *   mod_signup_count: Boolean, whether or not the status code modifies
-      *     the total signup count
-      *   auto_transition: Boolean, whether or not users should automatically
-      *     transition from this role to the "approved" role when seats become
-      *     available.
-      */
-      db_query("CREATE TABLE IF NOT EXISTS {signup_status_codes} (
-        cid int unsigned NOT NULL auto_increment,
-        name varchar(128) NOT NULL default '',
-        description text NOT NULL default '',
-        mod_signup_count int NOT NULL default '0',
-        auto_transition int NOT NULL default '0',
-        show_on_form int NOT NULL default '0',
-        PRIMARY KEY (cid),
-        UNIQUE KEY name (name)
-      ) /*!40100 DEFAULT CHARACTER SET utf8 */;");
-     
-      /**
-      * Add the status code to the user signup log
-      *   status: An integer representing the status code id for the user's signup
-      */
-      db_query("ALTER TABLE {signup_log} ADD status int(2) NOT NULL default '1'");
-     
-      // Install the default status codes
-      signup_status_insert_default_codes();
-      break;
-  }
+  drupal_install_schema('signup_status');
+
+  $ret = array();
+  db_add_field($ret, 'signup_log', 'status', array(
+    'type' => 'int',
+    'not null' => TRUE,
+    'default' => '0',
+    'description' => t("The status status."),
+  ));
+
+  return $ret;
 }
 
-
 /**
- * Implementation of hook_uninstall()
+ * Implementation of hook_uninstall().
  */
 function signup_status_uninstall() {
-  db_query("DROP TABLE {signup_status_codes}");
-  db_query("ALTER TABLE {signup_log} DROP status");
- 
-  $variables = db_query("SELECT name FROM {variable} WHERE name LIKE 'signup_status%%'");
-  while ($variable = db_fetch_object($variables)) {
-    variable_del($variable->name);
-  }
+  drupal_uninstall_schema('signup_status');
+
+  $ret = array();
+  db_drop_field($ret, 'signup_log', 'status');
+
+  return $ret;
 }
 
+//////////////////////////////////////////////////////////////////////////////
+// Schema API hooks
 
 /**
- * Used by signup_status_install() to insert the default status codes
+ * Implementation of hook_schema().
  */
-function signup_status_insert_default_codes() {
-  $codes = array(
-    array('name' => t('Registered'), 'description' => t('User is registered for the node.'), 'mod_signup_count' => TRUE),
-    array('name' => t('Wait Listed'), 'description' => t('User has been wait listed.'), 'mod_signup_count' => TRUE),
+function signup_status_schema() {
+  return array(
+    'signup_status_codes' => array(
+      'description' => t('Stores signup statuses.'),
+      'fields' => array(
+        'cid' => array(
+          'type' => 'serial',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+          'description' => t("The signup status code ID."),
+        ),
+        'name' => array(
+          'type' => 'varchar',
+          'length' => 128,
+          'not null' => TRUE,
+          'description' => t("The name of the signup status."),
+        ),
+        'description' => array(
+          'type' => 'text',
+          'size' => 'big',
+          'not null' => TRUE,
+          'description' => t("The description of the signup status."),
+        ),
+        'mod_signup_count' => array(
+          'type' => 'int',
+          'not null' => TRUE,
+          'default' => 0,
+          'size' => 'tiny',
+          'description' => t('A flag showing if users with this signup status should be added to the total signuped users count.'),
+        ),
+        'show_on_form' => array(
+          'type' => 'int',
+          'not null' => TRUE,
+          'default' => 0,
+          'size' => 'tiny',
+          'description' => t('A flag showing if this signup status should be shown on the signup form.'),
+        ),
+      ),
+      'primary key' => array('cid'),
+      'unique key' => array('name'),
+    ),
   );
-  foreach ($codes as $code) {
-    db_query("INSERT INTO {signup_status_codes} (name, description, mod_signup_count) VALUES ('%s', '%s', %d)", $code['name'], $code['description'], $code['mod_signup_count']);
-  }
 }
 
-
-function signup_status_update_1() {
-  $ret = array();
-  $ret[] = update_sql("UPDATE {signup_status_codes} SET mod_signup_count = 1 WHERE cid = 1");
-  return $ret;
-}
-
-
-function signup_status_update_2() {
-  $ret = array();
-  $ret[] = update_sql("ALTER TABLE {signup_status_codes} ADD auto_transition int NOT NULL default '0'");
-  $ret[] = update_sql("UPDATE {signup_status_codes} SET auto_transition = 1 WHERE cid = 2");
-  return $ret;
-}
-
-
-function signup_status_update_3() {
-  $ret = array();
-  return $ret;
-}
-
-
-function signup_status_update_4() {
-  $ret = array();
-  $ret[] = update_sql("ALTER TABLE {signup_status_codes} ADD show_on_form int NOT NULL default '0'");
-  return $ret;
-}
