@@ -103,6 +103,9 @@ function signup_status_form_alter(&$form, $form_state, $form_id) {
     case 'signup_form':
       signup_status_alter_signup_form($form, $form_state);
       break;
+    case 'signup_edit_form':
+      signup_status_alter_signup_edit_form($form, $form_state);
+      break;
     case 'signup_broadcast_form':
       signup_status_alter_signup_broadcast_form($form, $form_state);
       break;
@@ -160,6 +163,42 @@ function signup_status_alter_signup_form_submit($form, &$form_state) {
       $args[] = $values['signup_anon_mail'];
     }
     db_query($sql, $args);
+  }
+}
+
+/**
+ * Alter the signup edit form to add a status selector, if available.
+ */
+function signup_status_alter_signup_edit_form(&$form, $form_state) {
+  $signup = $form['#signup'];
+  $options = array();
+  foreach (signup_status_codes() as $cid => $code) {
+    if ($code['show_on_form']) {
+      $options[$cid] = $code['name'];
+    }
+  }
+  if (!empty($options)) {
+    $form['elements']['signup_status'] = array(
+      '#type' => 'select',
+      '#title' => t('Status'),
+      '#options' => $options,
+      '#default_value' => $signup->status,
+      '#weight' => 1,
+    );
+    $form['elements']['save']['#submit'][] = 'signup_status_alter_signup_edit_form_submit';
+    $form['elements']['save']['#weight'] = 2;
+    $form['elements']['cancel-signup']['#weight'] = 2;
+  }
+}
+
+/**
+ * Handles submission of the altered signup edit form.
+ */
+function signup_status_alter_signup_edit_form_submit($form, &$form_state) {
+  $values = $form_state['values'];
+  $signup = $form['#signup'];
+  if (isset($values['signup_status'])) {
+    db_query("UPDATE {signup_log} SET status = %d WHERE sid = %d", $values['signup_status'], $signup->sid);
   }
 }
 
