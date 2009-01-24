@@ -27,7 +27,7 @@ function signup_status_install() {
     'type' => 'int',
     'not null' => TRUE,
     'default' => '0',
-    'description' => t("The status status."),
+    'description' => t('The status status.'),
   ));
 
   return $ret;
@@ -60,26 +60,26 @@ function signup_status_schema() {
           'type' => 'serial',
           'unsigned' => TRUE,
           'not null' => TRUE,
-          'description' => t("The signup status code ID."),
+          'description' => t('The signup status code ID.'),
         ),
         'name' => array(
           'type' => 'varchar',
           'length' => 128,
           'not null' => TRUE,
-          'description' => t("The name of the signup status."),
+          'description' => t('The name of the signup status.'),
         ),
         'description' => array(
           'type' => 'text',
           'size' => 'big',
           'not null' => TRUE,
-          'description' => t("The description of the signup status."),
+          'description' => t('The description of the signup status.'),
         ),
         'mod_signup_count' => array(
           'type' => 'int',
           'not null' => TRUE,
           'default' => 0,
           'size' => 'tiny',
-          'description' => t('A flag showing if users with this signup status should be added to the total signuped users count.'),
+          'description' => t('A flag showing if users with this signup status should be added to the total count of signed up users.'),
         ),
         'show_on_form' => array(
           'type' => 'int',
