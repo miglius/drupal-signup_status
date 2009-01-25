@@ -111,9 +111,16 @@ function signup_status_views_api() {
 // Signup form altering
 
 /**
- * Alter the signup form to add a status selector, if available.
+ * Helper function to generate the signup status form element.
+ *
+ * @param $current_status
+ *   Optional code for the current signup status to use as the default.
+ *
+ * @return
+ *   FormAPI array defining the signup status form element.
  */
-function signup_status_form_signup_form_alter(&$form, $form_state) {
+function _signup_status_status_form_element($current_status = NULL) {
+  $element = array();
   $options = array();
   foreach (signup_status_codes() as $cid => $code) {
     if ($code['show_on_form']) {
@@ -121,14 +128,41 @@ function signup_status_form_signup_form_alter(&$form, $form_state) {
     }
   }
   if (!empty($options)) {
-    $form['collapse']['signup_status'] = array(
+    if (!isset($current_status)) {
+      $options = array(-1 => t('- Please choose -')) + $options;
+    }
+    $element = array(
       '#type' => 'select',
       '#title' => t('Status'),
       '#options' => $options,
       '#weight' => 1,
     );
+    if (isset($current_status)) {
+      $element['#default_value'] = $current_status;
+    }
+  }
+  return $element;
+}
+
+/**
+ * Alter the signup form to add a status selector, if available.
+ */
+function signup_status_form_signup_form_alter(&$form, $form_state) {
+  $status_element = _signup_status_status_form_element();
+  if (!empty($status_element)) {
+    $form['collapse']['signup_status'] = $status_element;
     $form['collapse']['submit']['#weight'] = 2;
+    $form['#validate'][] = 'signup_status_signup_form_validate_status';
     $form['#submit'][] = 'signup_status_alter_signup_form_submit';
+  }
+}
+
+/**
+ * Validate the status field on the altered signup form.
+ */
+function signup_status_signup_form_validate_status($form, $form_state) {
+  if (!isset($form_state['values']['signup_status']) || $form_state['values']['signup_status'] == -1) {
+    form_set_error('signup_status', t('You must select a valid status.'));
   }
 }
 
@@ -153,20 +187,9 @@ function signup_status_alter_signup_form_submit($form, &$form_state) {
  */
 function signup_status_form_signup_edit_form_alter(&$form, $form_state) {
   $signup = $form['#signup'];
-  $options = array();
-  foreach (signup_status_codes() as $cid => $code) {
-    if ($code['show_on_form']) {
-      $options[$cid] = $code['name'];
-    }
-  }
-  if (!empty($options)) {
-    $form['elements']['signup_status'] = array(
-      '#type' => 'select',
-      '#title' => t('Status'),
-      '#options' => $options,
-      '#default_value' => $signup->status,
-      '#weight' => 1,
-    );
+  $status_element = _signup_status_status_form_element($signup->status);
+  if (!empty($status_element)) {
+    $form['elements']['signup_status'] = $status_element;
     $form['elements']['save']['#submit'][] = 'signup_status_alter_signup_edit_form_submit';
     $form['elements']['save']['#weight'] = 2;
     $form['elements']['cancel-signup']['#weight'] = 3;
