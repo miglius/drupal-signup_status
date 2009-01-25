@@ -40,44 +40,43 @@ function signup_status_perm() {
  * Implementation of hook_menu().
  */
 function signup_status_menu() {
-  return array(
-    'admin/settings/signup_status' => array(
-      'title' => 'Signup status',
-      'description' => 'Configure signup status settings.',
-      'page callback' => 'signup_status_admin_list',
-      'access arguments' => array(SIGNUP_STATUS_MANAGE_PERMISSION),
-      'file' => 'signup_status.admin.inc',
-    ),
-    'admin/settings/signup_status/list' => array(
-      'title' => 'Status codes',
-      'type' => MENU_DEFAULT_LOCAL_TASK,
-    ),
-    'admin/settings/signup_status/add' => array(
-      'title' => 'Add status code',
-      'page callback' => 'drupal_get_form',
-      'page arguments' => array('signup_status_admin_form', 3),
-      'type' => MENU_LOCAL_TASK,
-      'weight' => 1,
-      'access arguments' => array(SIGNUP_STATUS_MANAGE_PERMISSION),
-      'file' => 'signup_status.admin.inc',
-    ),
-    'admin/settings/signup_status/edit' => array(
-      'title' => 'Configure status code',
-      'page callback' => 'drupal_get_form',
-      'page arguments' => array('signup_status_admin_form', 3, 4),
-      'type' => MENU_CALLBACK,
-      'access arguments' => array(SIGNUP_STATUS_MANAGE_PERMISSION),
-      'file' => 'signup_status.admin.inc',
-    ),
-    'admin/settings/signup_status/delete' => array(
-      'title' => 'Configure status code',
-      'page callback' => 'drupal_get_form',
-      'page arguments' => array('signup_status_admin_delete', 4),
-      'type' => MENU_CALLBACK,
-      'access arguments' => array(SIGNUP_STATUS_MANAGE_PERMISSION),
-      'file' => 'signup_status.admin.inc',
-    ),
+  $items['admin/settings/signup_status'] = array(
+    'title' => 'Signup status',
+    'description' => 'Configure signup status settings.',
+    'page callback' => 'signup_status_admin_list',
+    'access arguments' => array(SIGNUP_STATUS_MANAGE_PERMISSION),
+    'file' => 'signup_status.admin.inc',
   );
+  $items['admin/settings/signup_status/list'] = array(
+    'title' => 'Status codes',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+  ),
+  $items['admin/settings/signup_status/add'] = array(
+    'title' => 'Add status code',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('signup_status_admin_form', 3),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 1,
+    'access arguments' => array(SIGNUP_STATUS_MANAGE_PERMISSION),
+    'file' => 'signup_status.admin.inc',
+  );
+  $items['admin/settings/signup_status/edit'] = array(
+    'title' => 'Configure status code',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('signup_status_admin_form', 3, 4),
+    'type' => MENU_CALLBACK,
+    'access arguments' => array(SIGNUP_STATUS_MANAGE_PERMISSION),
+    'file' => 'signup_status.admin.inc',
+  );
+  $items['admin/settings/signup_status/delete'] = array(
+    'title' => 'Configure status code',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('signup_status_admin_delete', 4),
+    'type' => MENU_CALLBACK,
+    'access arguments' => array(SIGNUP_STATUS_MANAGE_PERMISSION),
+    'file' => 'signup_status.admin.inc',
+  );
+  return $items;
 }
 
 /**
