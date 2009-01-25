@@ -259,18 +259,22 @@ function signup_status_signup_broadcast_form_submit($form, &$form_state) {
  * Retrieve all available status codes.
  *
  * @return
- *   An array of status code arrays, keyed using the status code id, cid.  Each status code array contains the following keys / values:
+ *   An array of status code arrays, keyed using the status code id, cid.
+ *   Each status code array contains the following keys / values:
  *   - "name": The display name of the status code.
  *   - "description": The long-form description of the status code.
- *   - "mod_signup_count": A boolean value stating whether signups using the status code should modify the total signup count (i.e. for the "wait listed" status code).
- *   - "show_on_form": A boolean value stating if this status should be available on the signup form.
+ *   - "mod_signup_count": A boolean value stating whether signups using the
+ *     status code should modify the total signup count (i.e. for the "wait
+ *     listed" status code).
+ *   - "show_on_form": A boolean value stating if this status should be
+ *     available on the signup form.
  */
 function signup_status_codes() {
   static $codes = array();
   if (empty($codes)) {
     $result = db_query("SELECT * FROM {signup_status_codes}");
-    while ($row = db_fetch_object($result)) {
-      $codes[$row->cid] = array('name' => $row->name, 'description' => $row->description, 'mod_signup_count' => $row->mod_signup_count, 'show_on_form' => $row->show_on_form);
+    while ($row = db_fetch_array($result)) {
+      $codes[$row['cid']] = $row;
     }
   }
   return $codes;
