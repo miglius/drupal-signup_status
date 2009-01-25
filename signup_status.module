@@ -50,7 +50,7 @@ function signup_status_menu() {
   $items['admin/settings/signup_status/list'] = array(
     'title' => 'Status codes',
     'type' => MENU_DEFAULT_LOCAL_TASK,
-  ),
+  );
   $items['admin/settings/signup_status/add'] = array(
     'title' => 'Add status code',
     'page callback' => 'drupal_get_form',
