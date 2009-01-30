@@ -100,6 +100,7 @@ function signup_status_alter_action(&$signup, $context) {
   $signup->status = $context['signup_status'];
   db_query("UPDATE {signup_log} SET status = %d WHERE sid = %d", $signup->status, $signup->sid);
   watchdog('action', 'Set status of %signup_label to %status_name.', array('%signup_label' => $signup->label, '%status_name' => $status_codes[$signup->status]['name']));
+  _signup_status_change('update', $signup);
 }
 
 /**
@@ -134,6 +135,15 @@ function signup_status_alter_action_validate($form, $form_state) {
  */
 function signup_status_alter_action_submit($form, $form_state) {
   return array('signup_status' => $form_state['values']['signup_status']);
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Signup integration
+/**
+ * Implementation of hook_signup_cancel().
+ */
+function signup_status_signup_cancel($signup, $node) {
+  _signup_status_change('delete', $signup);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -201,13 +211,17 @@ function signup_status_signup_form_validate_status($form, $form_state) {
 function signup_status_alter_signup_form_submit($form, &$form_state) {
   $values = $form_state['values'];
   if (isset($values['signup_status'])) {
-    $sql = "UPDATE {signup_log} SET status = %d WHERE uid = %d AND nid = %d";
-    $args = array($values['signup_status'], $values['uid'], $values['nid']);
+    $sql = "SELECT * FROM {signup_log} WHERE uid = %d AND nid = %d";
+    $args = array($values['uid'], $values['nid']);
     if (isset($values['signup_anon_mail'])) {
       $sql .= " AND anon_mail = '%s'";
       $args[] = $values['signup_anon_mail'];
     }
-    db_query($sql, $args);
+    if ($signup = db_fetch_object(db_query($sql, $args))) {
+      $signup->status = $values['signup_status'];
+      db_query("UPDATE {signup_log} SET status = %d WHERE sid = %d", $signup->status, $signup->sid);
+      _signup_status_change('add', $signup);
+    }
   }
 }
 
@@ -232,7 +246,9 @@ function signup_status_alter_signup_edit_form_submit($form, &$form_state) {
   $values = $form_state['values'];
   $signup = $form['#signup'];
   if (isset($values['signup_status'])) {
-    db_query("UPDATE {signup_log} SET status = %d WHERE sid = %d", $values['signup_status'], $signup->sid);
+    $signup->status = $values['signup_status'];
+    db_query("UPDATE {signup_log} SET status = %d WHERE sid = %d", $signup->status, $signup->sid);
+    _signup_status_change('update', $signup);
   }
 }
 
@@ -333,5 +349,16 @@ function signup_status_codes() {
     }
   }
   return $codes;
+}
+
+/**
+ * Fire the hook on the signup status change.
+ * @param $action
+ *   A string representing signup status change.
+ * @param $signup
+ *   A signup object.
+ */
+function _signup_status_change($action, $signup) {
+  module_invoke_all('signup_status', $action, $signup);
 }
 
