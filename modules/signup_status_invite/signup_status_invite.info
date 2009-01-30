@@ -1,0 +1,5 @@
+; $Id$
+name = Signup status invite
+description = Allow inviting other users to signup.
+dependencies[] = signup_status
+core = 6.x
