@@ -1,0 +1,57 @@
+<?php
+// $Id$
+
+/**
+ * @file
+ * Subscribes users to node notifications when signing up to a node.
+ */
+
+//////////////////////////////////////////////////////////////////////////////
+
+define('SIGNUP_STATUS_NOTIFICATIONS_DELETE', variable_get('signup_status_notifications_delete', 0));
+
+//////////////////////////////////////////////////////////////////////////////
+// Core API hooks
+
+/**
+ * Implementation of hook_menu().
+ */
+function signup_status_notifications_menu() {
+  return array(
+    'admin/settings/signup_status_notifications' => array(
+      'title' => 'Signup status notifications',
+      'description' => 'Configure signup status notification settings.',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('signup_status_notifications_admin_settings'),
+      'access arguments' => array('administer site configuration'),
+      'file' => 'signup_status_notifications.admin.inc',
+    ),
+  );
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Signup status integration
+
+/**
+ * Implementation of hook_signup_status().
+ */
+function signup_status_notifications_signup_status($action, $signup) {
+  if ($signup->uid > 0 && isset($signup->status) && $signup->status > 0 && in_array($signup->status, variable_get('signup_status_notifications_statuses', array()))) {
+    $params = array('uid' => $signup->uid, 'type' => 'thread', 'event_type' => 'node');
+    $conditions = array('nid' => $signup->nid);
+
+    switch ($action) {
+      case 'delete':
+        if (SIGNUP_STATUS_NOTIFICATIONS_DELETE) {
+          notifications_delete_subscriptions($params, $conditions);
+        }
+        break;
+      default:
+        if (!count(notifications_get_subscriptions($params, $conditions))) {
+          $subscription = array_merge($params, array('fields' => $conditions));
+          notifications_save_subscription($subscription);
+        }
+    }
+  }
+}
+

@@ -1,0 +1,7 @@
+; $Id$
+name = Signup status notifications
+description = Subscribe users to notifications when they signup to a node.
+dependencies[] = signup_status
+dependencies[] = notifications
+core = 6.x
+
