@@ -3,7 +3,7 @@
 
 /**
  * @file
- * Provides default views for the signup status module.
+ * Provides default views for the Signup status module.
  */
 
 /**
@@ -14,8 +14,8 @@ function signup_status_views_default_views() {
 
   if (module_exists('views_bulk_operations')) {
     $view = new view;
-    $view->name = 'signup_status_user_vbo_admin_list';
-    $view->description = 'Per-node signup administration interface with checkboxes for bulk operations.';
+    $view->name = 'signup_status_user_vbo_admin';
+    $view->description = t('Per-node signup administration interface with checkboxes for bulk operations.');
     $view->tag = 'Signup status';
     $view->view_php = '';
     $view->base_table = 'signup_log';
@@ -101,7 +101,7 @@ function signup_status_views_default_views() {
     ));
     $handler->override_option('arguments', array(
       'nid' => array(
-        'default_action' => 'not found',
+        'default_action' => 'ignore',
         'style_plugin' => 'default_summary',
         'style_options' => array(),
         'wildcard' => 'all',
@@ -126,9 +126,8 @@ function signup_status_views_default_views() {
         'validate_argument_vocabulary' => array(),
         'validate_argument_type' => 'tid',
         'validate_argument_signup_status' => 'any',
-        'validate_argument_signup_node_access' => 0,
+        'validate_argument_signup_node_access' => 1,
         'validate_argument_php' => '',
-        'validate_argument_node_type' => array(),
       ),
     ));
     $handler->override_option('access', array(
@@ -176,9 +175,8 @@ function signup_status_views_default_views() {
       'default' => '-1',
       'execution_type' => '1',
       'display_type' => '0',
-      'skip_confirmation' => 1,
+      'skip_confirmation' => 0,
       'display_result' => 1,
-      'merge_single_action' => 0,
       'selected_operations' => array(
         '5c7373a6aa7a8bf5549412c9f887c2d3' => '5c7373a6aa7a8bf5549412c9f887c2d3',
         'd3a1a31a80ae6f3a3445aa18d827c62e' => 'd3a1a31a80ae6f3a3445aa18d827c62e',
