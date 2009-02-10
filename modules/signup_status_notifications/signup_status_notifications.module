@@ -39,17 +39,25 @@ function signup_status_notifications_signup_status($action, $signup) {
   if ($signup->uid > 0 && isset($signup->status) && $signup->status > 0 && in_array($signup->status, variable_get('signup_status_notifications_statuses', array()))) {
     $params = array('uid' => $signup->uid, 'type' => 'thread', 'event_type' => 'node');
     $conditions = array('nid' => $signup->nid);
+    $node = node_load($signup->nid);
+    global $user;
 
     switch ($action) {
       case 'delete':
         if (SIGNUP_STATUS_NOTIFICATIONS_DELETE) {
           notifications_delete_subscriptions($params, $conditions);
+          if ($user->uid == $signup->uid) {
+            drupal_set_message(t('Subscription to !node has been deleted.', array('!node' => l($node->title, 'node/'. $node->nid))));
+          }
         }
         break;
       default:
         if (!count(notifications_get_subscriptions($params, $conditions))) {
           $subscription = array_merge($params, array('fields' => $conditions));
           notifications_save_subscription($subscription);
+          if ($user->uid == $signup->uid) {
+            drupal_set_message(t('You are now subscribed to !node.', array('!node' => l($node->title, 'node/'. $node->nid))));
+          }
         }
     }
   }
