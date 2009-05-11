@@ -175,6 +175,7 @@ function _signup_status_status_form_element($current_status = NULL) {
       '#title' => t('Status'),
       '#options' => $options,
       '#weight' => 1,
+      '#required' => TRUE,
     );
     if (isset($current_status)) {
       $element['#default_value'] = $current_status;
